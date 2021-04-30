@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore/cos"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/thanos-io/thanos/pkg/objstore/gcs"
+	"github.com/thanos-io/thanos/pkg/objstore/iharbor"
 	"github.com/thanos-io/thanos/pkg/objstore/oss"
 	"github.com/thanos-io/thanos/pkg/objstore/s3"
 	"github.com/thanos-io/thanos/pkg/objstore/swift"
@@ -33,6 +34,7 @@ const (
 	SWIFT      ObjProvider = "SWIFT"
 	COS        ObjProvider = "COS"
 	ALIYUNOSS  ObjProvider = "ALIYUNOSS"
+	IHARBOR    ObjProvider = "IHARBOR"
 )
 
 type BucketConfig struct {
@@ -68,6 +70,8 @@ func NewBucket(logger log.Logger, confContentYaml []byte, reg prometheus.Registe
 		bucket, err = cos.NewBucket(logger, config, component)
 	case string(ALIYUNOSS):
 		bucket, err = oss.NewBucket(logger, config, component)
+	case string(IHARBOR):
+		bucket, err = iharbor.NewBucket(logger, config, component)
 	case string(FILESYSTEM):
 		bucket, err = filesystem.NewBucketFromConfig(config)
 	default:
