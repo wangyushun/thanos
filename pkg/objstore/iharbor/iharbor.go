@@ -3,7 +3,9 @@ package iharbor
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -259,70 +261,77 @@ func (b *Bucket) IsObjNotFoundErr(err error) bool {
 	return b.client.IsObjNotFoundErr(errors.Cause(err))
 }
 
-// func NewTestBucket(t testing.TB) (objstore.Bucket, func(), error) {
-// 	c := Config{
-// 		Endpoint: os.Getenv("IHARBOR_ENDPOINT"),
-// 		Bucket:   os.Getenv("IHARBOR_BUCKET"),
-// 		Token:    os.Getenv("IHARBOR_TOKEN"),
-// 		Insecure: strings.ToLower(os.Getenv("IHARBOR_INSECURE")) == "true",
-// 	}
+func configFromEnv() Config {
 
-// 	if c.Endpoint == "" || c.Token == "" {
-// 		return nil, nil, errors.New("iharbor endpoint or atoken is not present in config file")
-// 	}
-// 	if c.Bucket != "" && os.Getenv("THANOS_ALLOW_EXISTING_BUCKET_USE") == "true" {
-// 		t.Log("IHARBOR_BUCKET is defined. Normally this tests will create temporary bucket " +
-// 			"and delete it after test. Unset IHARBOR_BUCKET env variable to use default logic. If you really want to run " +
-// 			"tests against provided (NOT USED!) bucket, set THANOS_ALLOW_EXISTING_BUCKET_USE=true.")
-// 		return NewTestBucketFromConfig(t, c, true)
-// 	}
-// 	return NewTestBucketFromConfig(t, c, false)
-// }
+	c := Config{
+		Endpoint: os.Getenv("IHARBOR_ENDPOINT"),
+		Bucket:   os.Getenv("IHARBOR_BUCKET"),
+		Token:    os.Getenv("IHARBOR_TOKEN"),
+		Insecure: strings.ToLower(os.Getenv("IHARBOR_INSECURE")) == "true",
+	}
 
-// func NewTestBucketFromConfig(t testing.TB, c Config, reuseBucket bool) (objstore.Bucket, func(), error) {
-// 	if c.Bucket == "" {
-// 		src := rand.NewSource(time.Now().UnixNano())
+	return c
+}
 
-// 		bktToCreate := strings.Replace(fmt.Sprintf("test_%s_%x", strings.ToLower(t.Name()), src.Int63()), "_", "-", -1)
-// 		if len(bktToCreate) >= 63 {
-// 			bktToCreate = bktToCreate[:63]
-// 		}
-// 		testclient, err := alioss.New(c.Endpoint, c.AccessKeyID, c.AccessKeySecret)
-// 		if err != nil {
-// 			return nil, nil, errors.Wrap(err, "create aliyun oss client failed")
-// 		}
+// NewTestBucket creates test bkt client that before returning creates temporary bucket.
+// In a close function it empties and deletes the bucket.
+func NewTestBucket(t testing.TB) (objstore.Bucket, func(), error) {
+	c := configFromEnv()
+	if c.Endpoint == "" || c.Token == "" {
+		return nil, nil, errors.New("iharbor endpoint or token is not present in config file")
+	}
 
-// 		if err := testclient.CreateBucket(bktToCreate); err != nil {
-// 			return nil, nil, errors.Wrapf(err, "create aliyun oss bucket %s failed", bktToCreate)
-// 		}
-// 		c.Bucket = bktToCreate
-// 	}
+	if c.Bucket != "" {
+		if os.Getenv("THANOS_ALLOW_EXISTING_BUCKET_USE") == "" {
+			return nil, nil, errors.New("IHARBOR_BUCKET is defined. Normally this tests will create temporary bucket " +
+				"and delete it after test. Unset IHARBOR_BUCKET env variable to use default logic. If you really want to run " +
+				"tests against provided (NOT USED!) bucket, set THANOS_ALLOW_EXISTING_BUCKET_USE=true. WARNING: That bucket " +
+				"needs to be manually cleared. This means that it is only useful to run one test in a time. This is due " +
+				"to safety (accidentally pointing prod bucket for test) as well as IHARBOR not being fully strong consistent.")
+		}
+	}
 
-// 	bc, err := yaml.Marshal(c)
-// 	if err != nil {
-// 		return nil, nil, err
-// 	}
+	return NewTestBucketFromConfig(t, c, true)
+}
 
-// 	b, err := NewBucket(log.NewNopLogger(), bc, "thanos-aliyun-oss-test")
-// 	if err != nil {
-// 		return nil, nil, err
-// 	}
+func NewTestBucketFromConfig(t testing.TB, c Config, reuseBucket bool) (objstore.Bucket, func(), error) {
+	ctx := context.Background()
 
-// 	if reuseBucket {
-// 		if err := b.Iter(context.Background(), "", func(f string) error {
-// 			return errors.Errorf("bucket %s is not empty", c.Bucket)
-// 		}); err != nil {
-// 			return nil, nil, errors.Wrapf(err, "oss check bucket %s", c.Bucket)
-// 		}
+	bc, err := yaml.Marshal(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err := NewBucket(log.NewNopLogger(), bc, "thanos-e2e-test")
+	if err != nil {
+		return nil, nil, err
+	}
 
-// 		t.Log("WARNING. Reusing", c.Bucket, "Aliyun OSS bucket for OSS tests. Manual cleanup afterwards is required")
-// 		return b, func() {}, nil
-// 	}
+	bktToCreate := c.Bucket
+	if c.Bucket != "" && reuseBucket {
+		if err := b.Iter(ctx, "", func(f string) error {
+			return errors.Errorf("bucket %s is not empty", c.Bucket)
+		}); err != nil {
+			return nil, nil, errors.Wrapf(err, "iharbor check bucket %s", c.Bucket)
+		}
 
-// 	return b, func() {
-// 		objstore.EmptyBucket(t, context.Background(), b)
-// 		if err := b.client.DeleteBucket(c.Bucket); err != nil {
-// 			t.Logf("deleting bucket %s failed: %s", c.Bucket, err)
-// 		}
-// 	}, nil
-// }
+		t.Log("WARNING. Reusing", c.Bucket, "iHarbor bucket for iharbor tests. Manual cleanup afterwards is required")
+		return b, func() {}, nil
+	}
+
+	if c.Bucket == "" {
+		bktToCreate = objstore.CreateTemporaryTestBucketName(t)
+	}
+
+	if err := b.client.CreateBucket(bktToCreate); err != nil {
+		return nil, nil, err
+	}
+	b.name = bktToCreate
+	t.Log("created temporary iharbor bucket for iharbor tests with name", bktToCreate)
+
+	return b, func() {
+		objstore.EmptyBucket(t, ctx, b)
+		if err := b.client.DeleteBucket(bktToCreate); err != nil {
+			t.Logf("deleting bucket %s failed: %s", bktToCreate, err)
+		}
+	}, nil
+}
