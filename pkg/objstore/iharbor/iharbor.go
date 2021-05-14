@@ -2,6 +2,7 @@ package iharbor
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -59,7 +60,7 @@ func NewBucket(logger log.Logger, conf []byte, component string) (*Bucket, error
 		return nil, errors.Wrap(err, "validate iharbor configuration")
 	}
 
-	client, err := NewIHarborClient(config.Insecure, config.Endpoint, config.Token)
+	client, err := NewIHarborClient(!config.Insecure, config.Endpoint, config.Token)
 	if err != nil {
 		return nil, errors.Wrap(err, "create iharbor client failed")
 	}
@@ -70,6 +71,7 @@ func NewBucket(logger log.Logger, conf []byte, component string) (*Bucket, error
 		name:   config.Bucket,
 		config: config,
 	}
+	fmt.Println("success new iharbor bucket")
 	return bkt, nil
 }
 
@@ -126,6 +128,10 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, opt
 
 	continuationToken := ""
 	for {
+		if err := ctx.Err(); err != nil {
+			return errors.Wrap(err, "context closed while iterating bucket")
+		}
+
 		results, err := b.client.ListBucketObjects(b.name, dir, delimiter, continuationToken, -1)
 		if err != nil {
 			return err
@@ -244,7 +250,7 @@ func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 	meta, err := b.client.GetObjectMeta(b.name, name)
 	if err != nil {
 		if b.client.IsObjNotFoundErr(err) {
-			return true, nil
+			return false, nil
 		}
 
 		return false, errors.Wrap(err, "cloud not check if object exists")
