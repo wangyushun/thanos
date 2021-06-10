@@ -28,7 +28,11 @@ type IHarborError struct {
 }
 
 func (e IHarborError) Error() string {
-	return e.message
+	return "code:" + e.Code + "," + e.message
+}
+
+func (e *IHarborError) SetMessage(s string) {
+	e.message = s
 }
 
 func NewIHarborError(code, message string, statusCode int) IHarborError {
@@ -306,7 +310,7 @@ func (c *IHarborClient) makeIfParentPathError(err error, bucketName, name string
 			return false
 		}
 
-		if err := c.CreatePath(bucketName, dirPath); err != nil {
+		if e := c.CreatePath(bucketName, dirPath); e != nil {
 			return false
 		}
 		return true
@@ -373,10 +377,26 @@ func (c *IHarborClient) UploadOneChunk(bucketName, objPathName string, offset in
 
 	defer resp.Body.Close()
 	response := buildResponse(resp)
-	err = wrapIHarborError(response, "UploadOneChunk failed")
-	if ok := c.makeIfParentPathError(err, bucketName, objPathName); !ok {
-		return err
+	ierr := wrapIHarborError(response, "UploadOneChunk failed")
+
+	if !c.IsNotParentPathErr(err) {
+		ierr.SetMessage(ierr.Error() + ", is not NotParentPath error")
+		return ierr
 	}
+	dirs := strings.Split(strings.TrimSuffix(objPathName, "/"), "/")
+	dirPath := strings.Join(dirs[:len(dirs)-1], "/")
+	if dirPath == "" {
+		return ierr
+	}
+
+	if e := c.CreatePath(bucketName, dirPath); e != nil {
+		ierr.SetMessage(ierr.Error() + e.Error())
+		return ierr
+	}
+
+	// if ok := c.makeIfParentPathError(err, bucketName, objPathName); !ok {
+	// 	return err
+	// }
 
 	// try once again
 	body.Seek(0, io.SeekStart)
@@ -523,7 +543,7 @@ func (c *IHarborClient) PutObject(bucketName string, objPathName string, r io.Re
 
 	defer resp2.Body.Close()
 	response2 := buildResponse(resp)
-	return wrapIHarborError(response2, "Put object failed")
+	return wrapIHarborError(response2, "Put object failed try once again")
 }
 
 // DeleteObject : delete object
@@ -604,8 +624,8 @@ type ObjectMetaResult struct {
 }
 
 // GetObjectMeta
-// param offset: 对象指定偏移量读；<0忽略
-// param size: 读取字节长度；<=0读取到结尾，max 20MB
+// param bucketName: bucket name
+// param objPathName: object key
 func (c *IHarborClient) GetObjectMeta(bucketName string, objPathName string) (*ObjectMetaResult, error) {
 
 	path := buildPath([]string{"api/v1/metadata", bucketName, objPathName})
