@@ -300,23 +300,27 @@ func (c *IHarborClient) uploadOneChunkRequest(uri string, body io.Reader, header
 
 // make path if err is ParentPathError
 // return:
-//		true    is ParentPathError, and make it ok
-//		false   is ParentPathError, and make it failed;or is not ParentPathError
-func (c *IHarborClient) makeIfParentPathError(err error, bucketName, name string) bool {
-	if c.IsNotParentPathErr(err) {
+//		nil     is ParentPathError, and make it ok
+//		error   is ParentPathError, and make it failed;or is not ParentPathError
+func (c *IHarborClient) makeIfParentPathError(err error, bucketName, name string) error {
+	if c.IsNoParentPathErr(err) {
 		dirs := strings.Split(strings.TrimSuffix(name, "/"), "/")
 		dirPath := strings.Join(dirs[:len(dirs)-1], "/")
 		if dirPath == "" {
-			return false
+			return NewIHarborError(ErrCodeNoParentPath,
+				"Is NoParentPath Error, "+err.Error()+";but invalid dir path:"+name, 500)
 		}
 
 		if e := c.CreatePath(bucketName, dirPath); e != nil {
-			return false
+			return NewIHarborError(ErrCodeNoParentPath,
+				"Is NoParentPath Error,"+err.Error()+";Then CreatePath failed,"+e.Error(), 500)
+
 		}
-		return true
+		return nil
 	}
 
-	return false
+	return NewIHarborError("Error",
+		"Is not NoParentPath Error,"+err.Error(), 500)
 }
 
 // UploadOneChunk 上传一个对象数据块
@@ -379,24 +383,9 @@ func (c *IHarborClient) UploadOneChunk(bucketName, objPathName string, offset in
 	response := buildResponse(resp)
 	ierr := wrapIHarborError(response, "UploadOneChunk failed")
 
-	if !c.IsNotParentPathErr(err) {
-		ierr.SetMessage(ierr.Error() + ", is not NotParentPath error")
-		return ierr
+	if err := c.makeIfParentPathError(ierr, bucketName, objPathName); err != nil {
+		return err
 	}
-	dirs := strings.Split(strings.TrimSuffix(objPathName, "/"), "/")
-	dirPath := strings.Join(dirs[:len(dirs)-1], "/")
-	if dirPath == "" {
-		return ierr
-	}
-
-	if e := c.CreatePath(bucketName, dirPath); e != nil {
-		ierr.SetMessage(ierr.Error() + e.Error())
-		return ierr
-	}
-
-	// if ok := c.makeIfParentPathError(err, bucketName, objPathName); !ok {
-	// 	return err
-	// }
 
 	// try once again
 	body.Seek(0, io.SeekStart)
@@ -526,8 +515,8 @@ func (c *IHarborClient) PutObject(bucketName string, objPathName string, r io.Re
 	defer resp.Body.Close()
 	response := buildResponse(resp)
 	err = wrapIHarborError(response, "Put object failed")
-	if ok := c.makeIfParentPathError(err, bucketName, objPathName); !ok {
-		return err
+	if e := c.makeIfParentPathError(err, bucketName, objPathName); e != nil {
+		return e
 	}
 
 	// try once again
@@ -726,7 +715,7 @@ func (c *IHarborClient) IsObjNotFoundErr(err error) bool {
 	return false
 }
 
-func (c *IHarborClient) IsNotParentPathErr(err error) bool {
+func (c *IHarborClient) IsNoParentPathErr(err error) bool {
 	if err == nil {
 		return false
 	}
