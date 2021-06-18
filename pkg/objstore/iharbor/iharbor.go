@@ -88,18 +88,18 @@ func (b *Bucket) Upload(_ context.Context, name string, r io.Reader) error {
 	// TODO(https://github.com/thanos-io/thanos/issues/678): Remove guessing length when minio provider will support multipart upload without this.
 	size, err := objstore.TryToGetSize(r)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get size apriori to upload %s", name)
+		return errors.Wrapf(err, "failed to get size apriori to upload [%s]", name)
 	}
 
 	if size <= 1024*1024*128 { // 128Mb
 		err := b.client.PutObject(b.name, name, r)
 		if err != nil {
-			return errors.Wrapf(err, "failed to upload(PutObject) %s", name)
+			return errors.Wrapf(err, "failed to upload(PutObject) [%s]", name)
 		}
 	} else {
 		err := b.client.MultipartUploadObject(b.name, name, r, 64)
 		if err != nil {
-			return errors.Wrapf(err, "failed to upload(multipart) %s", name)
+			return errors.Wrapf(err, "failed to upload(multipart) [%s]", name)
 		}
 	}
 

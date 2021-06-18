@@ -52,10 +52,10 @@ func wrapIHarborError(r *Response, message string) IHarborError {
 			errCode = code
 		}
 	}
-	test := parseResponseMsg(data)
+	text := parseResponseMsg(data)
 	msg := message
-	if test != "" {
-		msg += "," + test
+	if text != "" {
+		msg += "," + text
 	}
 	return NewIHarborError(errCode, msg, r.StatusCode)
 }
@@ -258,7 +258,7 @@ func (c *IHarborClient) CreateDir(bucketName string, dirPath string) error {
 			}
 		}
 	}
-	return wrapIHarborError(response, "Create dir failed")
+	return wrapIHarborError(response, "Create dir failed,"+urlStr)
 }
 
 // CreateDirPath : create a dir path
@@ -381,7 +381,7 @@ func (c *IHarborClient) UploadOneChunk(bucketName, objPathName string, offset in
 
 	defer resp.Body.Close()
 	response := buildResponse(resp)
-	ierr := wrapIHarborError(response, "UploadOneChunk failed")
+	ierr := wrapIHarborError(response, "UploadOneChunk failed,"+urlStr)
 
 	if err := c.makeIfParentPathError(ierr, bucketName, objPathName); err != nil {
 		return err
@@ -400,7 +400,7 @@ func (c *IHarborClient) UploadOneChunk(bucketName, objPathName string, offset in
 
 	defer resp2.Body.Close()
 	response2 := buildResponse(resp2)
-	return wrapIHarborError(response2, "UploadOneChunk failed")
+	return wrapIHarborError(response2, "UploadOneChunk failed,"+urlStr)
 }
 
 // MultipartUploadObject 上传一个对象
@@ -514,7 +514,7 @@ func (c *IHarborClient) PutObject(bucketName string, objPathName string, r io.Re
 
 	defer resp.Body.Close()
 	response := buildResponse(resp)
-	err = wrapIHarborError(response, "Put object failed")
+	err = wrapIHarborError(response, "Put object failed,"+urlStr)
 	if e := c.makeIfParentPathError(err, bucketName, objPathName); e != nil {
 		return e
 	}
@@ -532,7 +532,7 @@ func (c *IHarborClient) PutObject(bucketName string, objPathName string, r io.Re
 
 	defer resp2.Body.Close()
 	response2 := buildResponse(resp)
-	return wrapIHarborError(response2, "Put object failed try once again")
+	return wrapIHarborError(response2, "Put object failed try once again,"+urlStr)
 }
 
 // DeleteObject : delete object
@@ -559,7 +559,7 @@ func (c *IHarborClient) DeleteObject(bucketName string, objPathName string) erro
 		return nil
 	}
 
-	return wrapIHarborError(response, "Delete object failed")
+	return wrapIHarborError(response, "Delete object failed,"+urlStr)
 }
 
 // GetObject
@@ -597,7 +597,7 @@ func (c *IHarborClient) GetObject(bucketName string, objPathName string, offset 
 
 	defer resp.Body.Close()
 	response := buildResponse(resp)
-	return nil, wrapIHarborError(response, "get object failed")
+	return nil, wrapIHarborError(response, "get object failed,"+urlStr)
 }
 
 // ObjectAttributes 对象元数据
@@ -638,12 +638,12 @@ func (c *IHarborClient) GetObjectMeta(bucketName string, objPathName string) (*O
 	if response.StatusCode == 200 {
 		err2 := json.Unmarshal(response.Bytes(), &ret)
 		if err2 != nil {
-			return nil, errors.New("get object metadata failed," + err2.Error())
+			return nil, errors.New("get object metadata failed," + urlStr + ";err:" + err2.Error())
 		}
 		return &ret, nil
 	}
 
-	return nil, wrapIHarborError(response, "get object metadata failed")
+	return nil, wrapIHarborError(response, "get object metadata failed,"+urlStr)
 }
 
 // CreateBucket
@@ -671,7 +671,7 @@ func (c *IHarborClient) CreateBucket(bucketName string) error {
 		return nil
 	}
 
-	return wrapIHarborError(response, "create bucket failed")
+	return wrapIHarborError(response, "create bucket failed,"+urlStr)
 }
 
 // DeleteBucket
@@ -698,7 +698,7 @@ func (c *IHarborClient) DeleteBucket(bucketName string) error {
 		return nil
 	}
 
-	return wrapIHarborError(response, "delete bucket failed")
+	return wrapIHarborError(response, "delete bucket failed,"+urlStr)
 }
 
 func (c *IHarborClient) IsObjNotFoundErr(err error) bool {
@@ -807,7 +807,7 @@ func (c *IHarborClient) ListObjectsByURL(url string) (*ListObjectsResult, error)
 		return c.buildListObjectsResult(response.Bytes())
 	}
 
-	return nil, wrapIHarborError(response, "list objects failed")
+	return nil, wrapIHarborError(response, "list objects failed,"+url)
 }
 
 // buildListObjectsResult
@@ -898,5 +898,5 @@ func (c *IHarborClient) ListBucketObjects(bucketName, prefix, delimiter, continu
 		return &lbr, nil
 	}
 
-	return nil, wrapIHarborError(response, "list objects failed")
+	return nil, wrapIHarborError(response, "list objects failed,"+urlStr)
 }
