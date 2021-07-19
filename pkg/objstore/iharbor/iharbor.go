@@ -24,6 +24,7 @@ type Config struct {
 	Bucket   string `yaml:"bucket"`
 	Token    string `yaml:"token"`
 	Insecure bool   `yaml:"insecure"`
+	Debug    bool   `yaml:"debug"`
 }
 
 // Validate checks to see if mandatory iharbor config options are set.
@@ -71,8 +72,16 @@ func NewBucket(logger log.Logger, conf []byte, component string) (*Bucket, error
 		name:   config.Bucket,
 		config: config,
 	}
+
+	bkt.Log("msg", "success new iharbor bucket")
 	fmt.Println("success new iharbor bucket")
 	return bkt, nil
+}
+
+func (b *Bucket) Log(keyvals ...interface{}) {
+	if b.config.Debug {
+		b.logger.Log(keyvals...)
+	}
 }
 
 func (b *Bucket) Name() string {
@@ -80,11 +89,15 @@ func (b *Bucket) Name() string {
 }
 
 func (b *Bucket) Close() error {
+	if b.config.Debug {
+		b.logger.Log("msg", "success to close bucket")
+	}
 	return nil
 }
 
 // Upload the contents of the reader as an object into the bucket.
 func (b *Bucket) Upload(_ context.Context, name string, r io.Reader) error {
+	b.Log("msg", "start upload object", "name", name)
 	// TODO(https://github.com/thanos-io/thanos/issues/678): Remove guessing length when minio provider will support multipart upload without this.
 	size, err := objstore.TryToGetSize(r)
 	if err != nil {
@@ -103,20 +116,24 @@ func (b *Bucket) Upload(_ context.Context, name string, r io.Reader) error {
 		}
 	}
 
+	b.Log("msg", "success upload object", "name", name)
 	return nil
 }
 
 // Delete removes the object with the given name.
 func (b *Bucket) Delete(ctx context.Context, name string) error {
+	b.Log("msg", "start delete object", "name", name)
 	if err := b.client.DeleteObject(b.name, name); err != nil {
 		return errors.Wrap(err, "delete iharbor object")
 	}
+	b.Log("msg", "success delete object", "name", name)
 	return nil
 }
 
 // Iter calls f for each entry in the given directory (not recursive.). The argument to f is the full
 // object name including the prefix of the inspected directory.
 func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
+	b.Log("msg", "Iter dir starting", "dir", dir)
 	if dir != "" {
 		dir = strings.TrimSuffix(dir, objstore.DirDelim)
 	}
@@ -155,6 +172,7 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, opt
 		continuationToken = results.NextContinuationToken
 	}
 
+	b.Log("msg", "Iter dir success", "dir", dir)
 	return nil
 
 	// results, err := b.client.ListObjects(b.name, dir, -1, 1000, onlyObject)
@@ -199,15 +217,18 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, opt
 // }
 
 func (b *Bucket) getRange(_ context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.Log("msg", "get object range starting", "name", name, "offset", off, "length", length)
 	if len(name) == 0 {
 		return nil, errors.New("given object name should not empty")
 	}
 
 	resp, err := b.client.GetObject(b.name, name, off, length)
 	if err != nil {
+		b.Log("msg", "get object range error,"+err.Error(), "name", name, "offset", off, "length", length)
 		return nil, err
 	}
 
+	b.Log("msg", "get object range success", "name", name, "offset", off, "length", length)
 	return resp, nil
 }
 
@@ -222,6 +243,7 @@ func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (
 
 // Attributes returns information about the specified object.
 func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	b.Log("msg", "get object attributes statring", "name", name)
 	meta, err := b.client.GetObjectMeta(b.name, name)
 	if err != nil {
 		return objstore.ObjectAttributes{}, err
@@ -239,6 +261,7 @@ func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAt
 		return objstore.ObjectAttributes{}, errors.Wrap(err, "parse Last modified")
 	}
 
+	b.Log("msg", "get object attributes success", "name", name)
 	return objstore.ObjectAttributes{
 		Size:         meta.Obj.Size,
 		LastModified: mod,
